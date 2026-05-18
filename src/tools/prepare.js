@@ -1,6 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { stat, mkdtemp } from 'fs/promises';
+import { stat, mkdtemp, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { getSession } from './session.js';
@@ -11,6 +11,9 @@ const WHISPER_MAX_BYTES   = 25 * 1024 * 1024;
 const WHISPER_NATIVE      = new Set(['.mp3', '.mp4', '.m4a', '.wav', '.webm', '.flac', '.ogg', '.mpga', '.mpeg']);
 const MP3_BYTES_PER_SEC   = Math.ceil((64 * 1000) / 8);
 const CHUNK_DURATION_SECS = Math.floor((WHISPER_MAX_BYTES * 0.9) / MP3_BYTES_PER_SEC);
+
+const WAVEFORM_SAMPLE_RATE  = 8000; // Hz — enough for amplitude envelope
+const WAVEFORM_SAMPLES_PER_SEC = 10; // output resolution
 
 function ffmpeg(args) {
   return execFileAsync('ffmpeg', args, { maxBuffer: 100 * 1024 * 1024 });
@@ -76,6 +79,42 @@ async function generateProxy(inputPath, tmpDir) {
   return proxyPath;
 }
 
+// Extracts RMS amplitude envelope as an array of floats (0–1) at WAVEFORM_SAMPLES_PER_SEC.
+async function extractWaveform(inputPath, tmpDir) {
+  const rawPath = path.join(tmpDir, 'waveform.raw');
+  try {
+    await ffmpeg([
+      '-y', '-i', inputPath,
+      '-ac', '1', '-ar', String(WAVEFORM_SAMPLE_RATE),
+      '-f', 's16le',
+      rawPath,
+    ]);
+  } catch {
+    return null; // file has no audio stream
+  }
+
+  const buf = await readFile(rawPath);
+  if (buf.length < 2) return null;
+
+  const sampleCount = Math.floor(buf.length / 2);
+  const windowSize  = Math.floor(WAVEFORM_SAMPLE_RATE / WAVEFORM_SAMPLES_PER_SEC);
+  const samples     = [];
+
+  for (let i = 0; i < sampleCount; i += windowSize) {
+    let sum = 0;
+    const end = Math.min(i + windowSize, sampleCount);
+    for (let j = i; j < end; j++) {
+      const v = buf.readInt16LE(j * 2) / 32768;
+      sum += v * v;
+    }
+    samples.push(Math.sqrt(sum / (end - i)));
+  }
+
+  // Normalize to 0–1 relative to the loudest window
+  const peak = Math.max(...samples, 1e-6);
+  return { samples: samples.map((s) => s / peak), samplesPerSec: WAVEFORM_SAMPLES_PER_SEC };
+}
+
 export const tools = [
   {
     name: 'prepare_file',
@@ -89,13 +128,15 @@ export const tools = [
       const s = getSession(session_id);
       s.tmpDir = await mkdtemp(path.join(os.tmpdir(), 'aiclip-'));
 
-      const [audioResult, proxyPath] = await Promise.all([
+      const [audioResult, proxyPath, waveform] = await Promise.all([
         prepareAudio(s.filePath, s.tmpDir),
         generateProxy(s.filePath, s.tmpDir).catch(() => s.filePath),
+        extractWaveform(s.filePath, s.tmpDir).catch(() => null),
       ]);
 
       s.chunks    = audioResult.chunks;
       s.proxyPath = proxyPath;
+      s.waveform  = waveform;
       return {
         status: 'ready',
         chunk_count: audioResult.chunks.length,

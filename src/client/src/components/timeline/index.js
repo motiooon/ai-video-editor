@@ -1,1 +1,1 @@
-export { WordTimeline } from './WordTimeline.jsx';
+export { EditTimeline } from './EditTimeline.jsx';

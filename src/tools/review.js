@@ -17,7 +17,7 @@ export const tools = [
 
       const maxGap = s.config.maxGapSeconds ?? 0.3;
       s.approvedTimeline = await createReview(
-        path.basename(s.filePath), s.filePath, s.proxyPath, s.timeline, maxGap, onReady,
+        path.basename(s.filePath), s.filePath, s.proxyPath, s.timeline, maxGap, s.waveform ?? null, onReady,
       );
       return { approved: true };
     },

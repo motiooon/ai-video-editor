@@ -62,6 +62,7 @@ function handleData(id, res) {
     filename: review.filename,
     timeline: review.timeline,
     maxGapSeconds: review.maxGapSeconds,
+    waveform: review.waveform ?? null,
   }));
 }
 
@@ -890,12 +891,12 @@ load();
  * @param {object[]} annotatedWords
  * @param {number} maxGapSeconds
  */
-export function createReview(filename, filePath, proxyPath, timeline, maxGapSeconds, onReady) {
+export function createReview(filename, filePath, proxyPath, timeline, maxGapSeconds, waveform, onReady) {
   startServer();
   const id = crypto.randomUUID();
   const url = `http://localhost:${PORT}/review/${id}`;
   return new Promise((resolve, reject) => {
-    reviews.set(id, { filename, filePath, proxyPath, timeline, maxGapSeconds, resolve, reject });
+    reviews.set(id, { filename, filePath, proxyPath, timeline, maxGapSeconds, waveform, resolve, reject });
     const opener = process.platform === 'win32' ? 'start'
       : process.platform === 'darwin' ? 'open' : 'xdg-open';
     execFile(opener, [url], () => {});

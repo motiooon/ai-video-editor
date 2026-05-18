@@ -20,7 +20,10 @@
       "Bash(node -e \"import\\('@modelcontextprotocol/sdk/server/stdio.js'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\).catch\\(e => console.log\\('FAIL:', e.message\\)\\)\")",
       "Bash(node -e \"import\\('@modelcontextprotocol/sdk/types.js'\\).then\\(m => console.log\\(Object.keys\\(m\\).slice\\(0,5\\)\\)\\).catch\\(e => console.log\\('FAIL:', e.message\\)\\)\")",
       "Bash(xargs ls)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(sed -n '57,70p' /Users/gabrielbaciu/code/losless-ai-clipper/src/server.js)",
+      "Bash(sed -n '890,910p' /Users/gabrielbaciu/code/losless-ai-clipper/src/server.js)",
+      "WebFetch(domain:zdarcy.com)"
     ]
   }
 }

@@ -3,6 +3,12 @@ import { useReviewStore } from '../../store.js';
 import { buildSegments } from '../../lib/segments.js';
 import { videoRef as globalVideoRef } from '../../lib/videoRef.js';
 
+const PX_PER_SEC   = 8;
+const MIN_GAP_SECS = 1;
+const BLOCK_H      = 48; // height of the waveform+blocks area
+const RULER_H      = 18;
+const TOTAL_H      = RULER_H + BLOCK_H;
+
 function tickInterval(dur) {
   if (dur <= 30)   return 5;
   if (dur <= 120)  return 15;
@@ -13,44 +19,112 @@ function tickInterval(dur) {
 }
 
 function formatTick(s) {
-  const m = Math.floor(s / 60);
+  const m   = Math.floor(s / 60);
   const sec = s % 60;
   if (m === 0) return `${sec}s`;
   return sec === 0 ? `${m}m` : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
 function formatTime(s) {
-  const m = Math.floor(s / 60);
+  const m   = Math.floor(s / 60);
   const sec = (s % 60).toFixed(1);
   return `${m}:${sec.padStart(4, '0')}`;
 }
 
+// Draw waveform bars, colored green inside word segments and purple in gaps.
+function drawWaveform(canvas, waveform, segments, totalDuration) {
+  const ctx = canvas.getContext('2d');
+  const W   = canvas.width;
+  const H   = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const { samples, samplesPerSec } = waveform;
+  const cx = H / 2;
+
+  // Precompute a lookup: for each pixel, is it inside a kept segment?
+  // Segments are sorted non-overlapping — use a pointer to walk them.
+  let si = 0;
+
+  for (let x = 0; x < W; x++) {
+    const t = x / PX_PER_SEC;
+
+    // Advance segment pointer
+    while (si < segments.length && segments[si].end < t) si++;
+    const inSeg = si < segments.length && t >= segments[si].start && t <= segments[si].end;
+
+    // Interpolate amplitude
+    const rawIdx = t * samplesPerSec;
+    const i0     = Math.floor(rawIdx);
+    const frac   = rawIdx - i0;
+    const a0     = i0 < samples.length ? samples[i0] : 0;
+    const a1     = i0 + 1 < samples.length ? samples[i0 + 1] : 0;
+    const amp    = a0 + (a1 - a0) * frac;
+
+    const barH = Math.max(1, amp * H * 0.88);
+
+    if (inSeg) {
+      ctx.fillStyle = `rgba(52,211,153,${0.30 + amp * 0.55})`;
+    } else {
+      ctx.fillStyle = `rgba(168,85,247,${0.22 + amp * 0.45})`;
+    }
+    ctx.fillRect(x, cx - barH / 2, 1, barH);
+  }
+}
+
 export function WordTimeline() {
-  const timeline        = useReviewStore((s) => s.timeline);
-  const maxGapSeconds   = useReviewStore((s) => s.maxGapSeconds);
-  const toggleSegment   = useReviewStore((s) => s.toggleSegment);
-  const scrollToWord    = useReviewStore((s) => s.scrollToWord);
+  const timeline      = useReviewStore((s) => s.timeline);
+  const maxGapSeconds = useReviewStore((s) => s.maxGapSeconds);
+  const waveform      = useReviewStore((s) => s.waveform);
+  const scrollToWord  = useReviewStore((s) => s.scrollToWord);
 
+  const scrollRef   = useRef(null);
   const playheadRef = useRef(null);
-  const [hoveredIdx, setHoveredIdx] = useState(-1);
+  const canvasRef   = useRef(null);
+  const [hoveredBlock, setHoveredBlock] = useState(null);
 
-  const { segments, totalDuration } = useMemo(() => {
+  const { segments, gaps, totalDuration } = useMemo(() => {
     const segs = buildSegments(timeline, maxGapSeconds);
     let dur = 0;
     for (let i = timeline.length - 1; i >= 0; i--) {
       if (timeline[i].type === 'word') { dur = timeline[i].end; break; }
     }
-    return { segments: segs, totalDuration: dur };
+    const gapList = [];
+    let prev = 0;
+    for (const seg of segs) {
+      if (seg.start - prev >= MIN_GAP_SECS) gapList.push({ start: prev, end: seg.start });
+      prev = seg.end;
+    }
+    if (dur - prev >= MIN_GAP_SECS) gapList.push({ start: prev, end: dur });
+    return { segments: segs, gaps: gapList, totalDuration: dur };
   }, [timeline, maxGapSeconds]);
 
-  // Imperative playhead — no re-render on every frame
+  // Draw waveform whenever data or segments change
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !waveform || !totalDuration) return;
+    canvas.width  = Math.ceil(totalDuration * PX_PER_SEC);
+    canvas.height = BLOCK_H;
+    drawWaveform(canvas, waveform, segments, totalDuration);
+  }, [waveform, segments, totalDuration]);
+
+  // Imperative playhead + auto-scroll during playback
   useEffect(() => {
     if (!totalDuration) return;
     const update = () => {
-      const video = globalVideoRef.current;
-      if (!video || !playheadRef.current) return;
-      playheadRef.current.style.left =
-        `${Math.min(100, (video.currentTime / totalDuration) * 100)}%`;
+      const video    = globalVideoRef.current;
+      const head     = playheadRef.current;
+      const scroller = scrollRef.current;
+      if (!video || !head || !scroller) return;
+
+      const x = video.currentTime * PX_PER_SEC;
+      head.style.left = `${x}px`;
+
+      if (!video.paused) {
+        const { scrollLeft, offsetWidth } = scroller;
+        if (x < scrollLeft + 40 || x > scrollLeft + offsetWidth - 40) {
+          scroller.scrollLeft = x - offsetWidth / 3;
+        }
+      }
     };
     const attach = () => {
       const video = globalVideoRef.current;
@@ -69,12 +143,17 @@ export function WordTimeline() {
 
   if (!totalDuration) return null;
 
-  const pct  = (t) => `${(t / totalDuration) * 100}%`;
-  const wpct = (s, e) => `${Math.max(0.15, ((e - s) / totalDuration) * 100)}%`;
+  const innerWidth = Math.ceil(totalDuration * PX_PER_SEC);
+  const px  = (t) => t * PX_PER_SEC;
+  const wpx = (s, e) => Math.max(2, (e - s) * PX_PER_SEC);
 
   const interval = tickInterval(totalDuration);
-  const ticks = [];
-  for (let t = interval; t < totalDuration; t += interval) ticks.push(t);
+  const ticks    = [];
+  for (let t = 0; t <= totalDuration; t += interval) ticks.push(t);
+
+  const seek = (time) => {
+    if (globalVideoRef.current) globalVideoRef.current.currentTime = time;
+  };
 
   const handleSegmentClick = (seg) => {
     for (let i = 0; i < timeline.length; i++) {
@@ -84,88 +163,97 @@ export function WordTimeline() {
         break;
       }
     }
-    toggleSegment(seg.start, seg.end);
-    if (globalVideoRef.current) globalVideoRef.current.currentTime = seg.start;
-  };
-
-  const handleBackgroundClick = (e) => {
-    if (e.target !== e.currentTarget) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const time = ((e.clientX - rect.left) / rect.width) * totalDuration;
-    if (globalVideoRef.current) globalVideoRef.current.currentTime = time;
+    seek(seg.start);
   };
 
   return (
     <div
-      className="relative shrink-0 border-t border-neutral-800 bg-[#111111] select-none"
-      style={{ height: 56 }}
+      ref={scrollRef}
+      className="scrollbar-thin shrink-0 overflow-x-auto border-t border-neutral-800 bg-[#111111] select-none"
+      style={{ height: TOTAL_H }}
     >
-      {/* Timestamp ruler */}
-      <div className="relative border-b border-white/[0.06]" style={{ height: 18 }}>
-        {ticks.map((t) => (
-          <div
-            key={t}
-            className="pointer-events-none absolute top-0 flex flex-col items-center"
-            style={{ left: pct(t), transform: 'translateX(-50%)' }}
-          >
-            <span className="text-[9px] text-neutral-600 tabular-nums leading-tight pt-[3px]">
-              {formatTick(t)}
-            </span>
-          </div>
-        ))}
-        {ticks.map((t) => (
-          <div
-            key={`tk-${t}`}
-            className="pointer-events-none absolute bottom-0 w-px bg-white/[0.08]"
-            style={{ left: pct(t), height: '4px' }}
-          />
-        ))}
-      </div>
+      <div className="relative" style={{ width: innerWidth, height: TOTAL_H, minWidth: '100%' }}>
 
-      {/* Segments area */}
-      <div
-        className="relative cursor-crosshair"
-        style={{ height: 38 }}
-        onClick={handleBackgroundClick}
-      >
-        {segments.map((seg, i) => {
-          const isHovered = hoveredIdx === i;
-          const dur = seg.end - seg.start;
-          const showLabel = dur / totalDuration > 0.04;
-
-          return (
+        {/* Timestamp ruler */}
+        <div className="absolute top-0 left-0 right-0 border-b border-white/[0.06]" style={{ height: RULER_H }}>
+          {ticks.map((t) => (
             <div
-              key={i}
-              className="absolute top-2 bottom-2 cursor-pointer rounded-sm transition-all duration-100"
-              style={{
-                left:    pct(seg.start),
-                width:   wpct(seg.start, seg.end),
-                background: isHovered
-                  ? 'rgba(52,211,153,0.50)'
-                  : 'rgba(52,211,153,0.25)',
-                border: `1px solid ${isHovered ? 'rgba(52,211,153,0.80)' : 'rgba(52,211,153,0.40)'}`,
-              }}
-              onClick={(e) => { e.stopPropagation(); handleSegmentClick(seg); }}
-              onMouseEnter={() => setHoveredIdx(i)}
-              onMouseLeave={() => setHoveredIdx(-1)}
-              title={`${formatTime(seg.start)} – ${formatTime(seg.end)}  (${dur.toFixed(1)}s)\nClick to remove`}
+              key={t}
+              className="pointer-events-none absolute top-0 flex flex-col items-center"
+              style={{ left: px(t), transform: 'translateX(-50%)' }}
             >
-              {showLabel && (
-                <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[9px] font-medium text-emerald-300/70 overflow-hidden whitespace-nowrap">
-                  {dur.toFixed(1)}s
-                </span>
-              )}
+              <span className="text-[9px] text-neutral-600 tabular-nums leading-tight pt-[3px]">
+                {formatTick(t)}
+              </span>
+              <div className="absolute bottom-0 w-px bg-white/[0.08]" style={{ height: '4px' }} />
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      {/* Full-height playhead spanning ruler + segments */}
-      <div
-        ref={playheadRef}
-        className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/50 z-10"
-        style={{ left: '0%' }}
-      />
+        {/* Blocks + waveform area */}
+        <div className="absolute left-0 right-0" style={{ top: RULER_H, height: BLOCK_H }}>
+
+          {/* Waveform canvas — drawn behind the block overlays */}
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0"
+            style={{ width: innerWidth, height: BLOCK_H, imageRendering: 'pixelated' }}
+          />
+
+          {/* Purple gap block overlays (border only — waveform fills the color) */}
+          {gaps.map((gap, i) => {
+            const isHov = hoveredBlock?.type === 'gap' && hoveredBlock.idx === i;
+            const dur   = gap.end - gap.start;
+            const w     = wpx(gap.start, gap.end);
+            return (
+              <div
+                key={`gap-${i}`}
+                className="absolute top-1.5 bottom-1.5 cursor-pointer rounded-sm transition-colors duration-100"
+                style={{
+                  left:       px(gap.start),
+                  width:      w,
+                  border:     `1px solid ${isHov ? 'rgba(168,85,247,0.75)' : 'rgba(168,85,247,0.35)'}`,
+                  background: isHov ? 'rgba(168,85,247,0.12)' : 'transparent',
+                }}
+                onClick={() => seek(gap.start)}
+                onMouseEnter={() => setHoveredBlock({ type: 'gap', idx: i })}
+                onMouseLeave={() => setHoveredBlock(null)}
+                title={`${formatTime(gap.start)} – ${formatTime(gap.end)}  (${dur.toFixed(1)}s space)`}
+              />
+            );
+          })}
+
+          {/* Green segment block overlays */}
+          {segments.map((seg, i) => {
+            const isHov = hoveredBlock?.type === 'seg' && hoveredBlock.idx === i;
+            const dur   = seg.end - seg.start;
+            const w     = wpx(seg.start, seg.end);
+            return (
+              <div
+                key={`seg-${i}`}
+                className="absolute top-1.5 bottom-1.5 cursor-pointer rounded-sm transition-colors duration-100"
+                style={{
+                  left:       px(seg.start),
+                  width:      w,
+                  border:     `1px solid ${isHov ? 'rgba(52,211,153,0.75)' : 'rgba(52,211,153,0.35)'}`,
+                  background: isHov ? 'rgba(52,211,153,0.12)' : 'transparent',
+                }}
+                onClick={() => handleSegmentClick(seg)}
+                onMouseEnter={() => setHoveredBlock({ type: 'seg', idx: i })}
+                onMouseLeave={() => setHoveredBlock(null)}
+                title={`${formatTime(seg.start)} – ${formatTime(seg.end)}  (${dur.toFixed(1)}s words)`}
+              />
+            );
+          })}
+        </div>
+
+        {/* Full-height playhead */}
+        <div
+          ref={playheadRef}
+          className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/60 z-10"
+          style={{ left: 0 }}
+        />
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { ResizablePane } from './ResizablePane.jsx';
 import { StatsBar }      from '../stats/index.js';
 import { TranscriptPane } from '../transcript/index.js';
 import { VideoPane }     from '../video/index.js';
-import { WordTimeline }  from '../timeline/index.js';
+import { EditTimeline }  from '../timeline/index.js';
 import { Toolbar }       from '../toolbar/index.js';
 
 export function Layout() {
@@ -13,7 +13,7 @@ export function Layout() {
         left={<TranscriptPane />}
         right={<VideoPane />}
       />
-      <WordTimeline />
+      <EditTimeline />
       <Toolbar />
     </div>
   );

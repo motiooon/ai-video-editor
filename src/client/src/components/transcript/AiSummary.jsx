@@ -21,7 +21,7 @@ export function AiSummary() {
   const reasons = REASON_ORDER.filter((r) => counts[r] > 0);
 
   return (
-    <div className="mb-7 rounded-xl bg-white shadow-sm ring-1 ring-black/[0.08] px-4 py-3.5">
+    <div className="mb-7 rounded-xl bg-neutral-900 ring-1 ring-white/[0.06] px-4 py-3.5">
       <p className="mb-2.5 text-[11px] font-semibold text-neutral-400 uppercase tracking-widest">
         AI removed {totalRemoved} word{totalRemoved !== 1 ? 's' : ''}
       </p>

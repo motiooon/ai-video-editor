@@ -14,6 +14,7 @@ export const useReviewStore = create((set, get) => ({
   timeline: [],
   originalTimeline: [],
   maxGapSeconds: 0.3,
+  waveform: null,
   activeWordIndex: -1,
   isPreviewing: false,
   previewSegs: [],
@@ -39,6 +40,7 @@ export const useReviewStore = create((set, get) => ({
         timeline: data.timeline ?? [],
         originalTimeline: JSON.parse(JSON.stringify(data.timeline ?? [])),
         maxGapSeconds: data.maxGapSeconds ?? 0.3,
+        waveform: data.waveform ?? null,
         status: 'ready',
         history: [],
       });
