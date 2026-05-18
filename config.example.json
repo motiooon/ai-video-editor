@@ -1,0 +1,14 @@
+{
+  "inputDir": "./input",
+  "outputDir": "./output",
+  "openaiApiKey": "",
+  "anthropicApiKey": "",
+  "whisperModel": "whisper-1",
+  "whisperLanguage": "en",
+  "maxGapSeconds": 0.3,
+  "removeDuplicateWords": true,
+  "removeFillerWords": true,
+  "fillerWords": ["um", "uh", "hmm", "mhm", "erm", "like", "you know", "basically", "literally", "actually", "i mean", "sort of", "kind of", "right", "okay so"],
+  "minSegmentSeconds": 0.05,
+  "supportedExtensions": [".mp3", ".mp4", ".m4a", ".wav", ".aiff", ".aac", ".ogg", ".flac", ".mov", ".mkv", ".webm"]
+}

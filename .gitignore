@@ -5,3 +5,4 @@ input
 *.log
 ./client/node_modules
 ./client/dist
+config.json
