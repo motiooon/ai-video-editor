@@ -17,7 +17,6 @@ export const useReviewStore = create((set, get) => ({
   waveform: null,
   activeWordIndex: -1,
   isPreviewing: false,
-  previewSegs: [],
   currentSegIdx: 0,
   status: 'loading',
   errorMessage: '',
@@ -67,6 +66,22 @@ export const useReviewStore = create((set, get) => ({
     });
   },
 
+  // Adjust which words are kept when the user drags a segment edge.
+  // Words newly inside [newStart,newEnd] are restored; words that fell outside are removed.
+  resizeSegment: (oldStart, oldEnd, newStart, newEnd) => {
+    const { timeline, history } = get();
+    const EPS = 0.05;
+    const next = timeline.map((item) => {
+      if (item.type !== 'word') return item;
+      const wasIn = item.start >= oldStart - EPS && item.end <= oldEnd + EPS;
+      const isIn  = item.start >= newStart - EPS && item.end <= newEnd + EPS;
+      if (wasIn && !isIn) return { ...item, removed: true,  reason: 'user' };
+      if (!wasIn && isIn) return { ...item, removed: false, reason: null  };
+      return item;
+    });
+    set({ timeline: next, history: [...history.slice(-MAX_HISTORY + 1), timeline] });
+  },
+
   // Toggle every word inside a segment's time range.
   // If any word is kept → remove all. If all removed → restore all.
   toggleSegment: (segStart, segEnd) => {
@@ -108,7 +123,6 @@ export const useReviewStore = create((set, get) => ({
       history: [],
       activeWordIndex: -1,
       isPreviewing: false,
-      previewSegs: [],
       currentSegIdx: 0,
     });
   },
@@ -133,40 +147,42 @@ export const useReviewStore = create((set, get) => ({
 
   startPreview: () => {
     const { timeline, maxGapSeconds } = get();
-    const segs = buildSegments(timeline, maxGapSeconds).filter(
-      (s) => s.end > s.start
-    );
+    const segs = buildSegments(timeline, maxGapSeconds).filter((s) => s.end > s.start);
     if (segs.length === 0) return null;
-    set({
-      isPreviewing: true,
-      previewSegs: segs,
-      currentSegIdx: 0,
-    });
+    set({ isPreviewing: true, currentSegIdx: 0 });
     return segs[0].start;
   },
 
   stopPreview: () => {
-    set({ isPreviewing: false, previewSegs: [], currentSegIdx: 0 });
+    set({ isPreviewing: false, currentSegIdx: 0 });
   },
 
+  // Recomputed every tick — any transcript edit is reflected immediately.
+  // Strategy: if currentTime is inside a segment, keep playing.
+  //           if currentTime is in a gap (past a segment end), jump now.
   advancePreview: (currentTime) => {
-    const { isPreviewing, previewSegs, currentSegIdx } = get();
-    if (!isPreviewing || previewSegs.length === 0) return null;
+    const { isPreviewing, timeline, maxGapSeconds } = get();
+    if (!isPreviewing) return null;
 
-    const seg = previewSegs[currentSegIdx];
-    if (!seg) return 'done';
+    const segs = buildSegments(timeline, maxGapSeconds).filter((s) => s.end > s.start);
+    if (!segs.length) { set({ isPreviewing: false, currentSegIdx: 0 }); return 'done'; }
 
-    if (currentTime >= seg.end - 0.05) {
-      const nextIdx = currentSegIdx + 1;
-      if (nextIdx >= previewSegs.length) {
-        set({ isPreviewing: false, previewSegs: [], currentSegIdx: 0 });
-        return 'done';
+    for (let i = 0; i < segs.length; i++) {
+      if (currentTime < segs[i].start) {
+        // We're in a gap before this segment — jump to it immediately
+        set({ currentSegIdx: i });
+        return segs[i].start;
       }
-      set({ currentSegIdx: nextIdx });
-      return previewSegs[nextIdx].start;
+      if (currentTime <= segs[i].end) {
+        // Inside this segment — keep playing
+        set({ currentSegIdx: i });
+        return null;
+      }
     }
 
-    return null;
+    // Past the last segment
+    set({ isPreviewing: false, currentSegIdx: 0 });
+    return 'done';
   },
 
   approve: async () => {
