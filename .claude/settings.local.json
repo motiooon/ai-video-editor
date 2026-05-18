@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node --check src/audio.js)",
+      "Bash(node --check src/editor.js)",
+      "Bash(node --check src/transcriber.js)",
+      "Bash(node --check src/server.js)",
+      "Bash(node --check src/index.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/clarifier.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/index.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/server.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/sessions.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/tools.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/agent.js)",
+      "Bash(node --check /Users/gabrielbaciu/code/losless-ai-clipper/src/mcp-server.js)",
+      "Bash(node -e \"import\\('@modelcontextprotocol/sdk'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\).catch\\(e => console.log\\(e.message\\)\\)\")",
+      "Bash(node -e \"import\\('@modelcontextprotocol/sdk/server/mcp.js'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\).catch\\(e => console.log\\(e.message\\)\\)\")",
+      "Bash(node -e \"import\\('@modelcontextprotocol/sdk/server/stdio.js'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\).catch\\(e => console.log\\('FAIL:', e.message\\)\\)\")",
+      "Bash(node -e \"import\\('@modelcontextprotocol/sdk/types.js'\\).then\\(m => console.log\\(Object.keys\\(m\\).slice\\(0,5\\)\\)\\).catch\\(e => console.log\\('FAIL:', e.message\\)\\)\")",
+      "Bash(xargs ls)",
+      "Bash(npm run *)"
+    ]
+  }
+}

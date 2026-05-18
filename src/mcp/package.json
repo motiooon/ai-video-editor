@@ -1,0 +1,13 @@
+{
+  "name": "ai-clipper-mcp",
+  "version": "1.0.0",
+  "description": "MCP server exposing AI Clipper tools for media transcript editing",
+  "type": "module",
+  "bin": {
+    "ai-clipper-mcp": "./server.js"
+  },
+  "keywords": ["mcp", "claude", "video-editing", "whisper", "transcript"],
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": ">=1.0.0"
+  }
+}
